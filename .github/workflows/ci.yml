@@ -1,0 +1,46 @@
+name: CI
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  lint:
+    runs-on: api-payhere-runner
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Lint
+        run: |
+          ./gradlew detekt --no-daemon
+
+  test-build:
+    runs-on: api-payhere-runner
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Test and Coverage
+        run: ./gradlew test --stacktrace --no-daemon
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./build/reports/jacoco/test/jacocoTestReport.xml
+          url: https://codecov.payhere.dev

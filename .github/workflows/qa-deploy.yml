@@ -1,0 +1,29 @@
+name: Deploy to QA (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: "Select the release branch to deploy"
+        required: true
+        default: "release/1.0.0"
+        type: string
+
+jobs:
+  deploy-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Selected Release Branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.release_branch }}
+
+      - name: Build and Test
+        run: |
+          echo "Building and Testing from branch: ${{ github.event.inputs.release_branch }}"
+          # 여기에 빌드 및 테스트 스크립트 추가
+
+      - name: Deploy to QA
+        run: |
+          echo "Deploying ${{ github.event.inputs.release_branch }} to QA environment..."
+          # 실제 QA 배포 스크립트 추가 (예: Kubernetes, Docker, AWS 등)

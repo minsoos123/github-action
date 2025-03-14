@@ -1,0 +1,96 @@
+name: CD(staging-deploy)
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+env:
+  STAGE: stg
+
+jobs:
+  build:
+    environment: stg
+    if: github.event.pull_request.merged == true
+    runs-on: api-payhere-runner
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # for Jib
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          cache: 'gradle'
+
+      # for ECR
+      - name: Install amazon-ecr-credential-helper
+        run: sudo apt-get install -y amazon-ecr-credential-helper
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STG_OIDC_ROLE_ARN }}
+          role-session-name: ${{ vars.AWS_STG_OIDC_ROLE_SESSION_NAME }}
+          aws-region: ${{ vars.AWS_STG_OIDC_ROLE_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Define Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: api-payhere
+        run: |
+          echo "IMAGE=$ECR_REGISTRY/$STAGE/$ECR_REPOSITORY:$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
+      # copyDocs
+      - name: Copy Docs
+        run: ./gradlew copyDocs --no-daemon
+        env:
+          API_SERVER_URL: http://api-payhere-stg.payhere.service
+
+      # build
+      - name: Build Docker images
+        run: ./gradlew -Dspring.profiles.active=stg --stacktrace :bootBuildImage --no-daemon
+
+      # Docker Push
+      - name: Docker Image Push
+        run: docker push $IMAGE
+
+      - uses: payhereinc/update-manifest-image-tag@main
+        with:
+          application-name: 'api-payhere'
+          image-tag: ${{ env.IMAGE }}
+          profile: ${{ env.STAGE }}
+          bot-pem: ${{ secrets.GH_PAYHERE_CI_PEM }}
+          bot-app-id: ${{ secrets.GH_PAYHERE_CI_APP_ID }}
+
+  notify:
+    environment: stg
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    env: # SUCCESS CASE
+      SLACK_COLOR: '#2EB67D'
+      SLACK_MESSAGE: 'stg/api-payhere `${{ github.sha }}`, `lastest` EKS 배포 :rocket:'
+    steps:
+      - name: Set env when deploy failure
+        if: ${{ needs.deploy.result == 'failure' }}
+        run: |
+          echo "SLACK_COLOR=#E01E5A" >> $GITHUB_ENV
+          echo "SLACK_MESSAGE=stg/api-payhere \`${{ github.sha }}\`, \`lastest\` 배포 실패" >> $GITHUB_ENV
+
+      - name: Notify docker push to Slack
+        uses: rtCamp/action-slack-notify@master
+        env:
+          SLACK_CHANNEL: notify_deployment-stage
+          SLACK_COLOR: ${{ env.SLACK_COLOR }}
+          SLACK_MESSAGE: ${{ env.SLACK_MESSAGE }}
+          SLACK_TITLE: Message
+          SLACK_USERNAME: Payhere GitHub Actions
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_STG }}

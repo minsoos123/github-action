@@ -1,0 +1,13 @@
+name: Auto Assign PR Creator
+
+on: pull_request
+
+jobs:
+  auto-assign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign PR creator
+        uses: pozil/auto-assign-issue@v2
+        with:
+          assignees: ${{ github.actor }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
